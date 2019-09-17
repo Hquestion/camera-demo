@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>camera demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        canvas {
+            width: 640px;
+            height: 480px;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+<button onclick="live()">Video播放摄像头,绘制到canvas上</button>
+<button onclick="record()">录制摄像头输出的stream，保存数据，并绘制到canvas</button>
+
+<div style="margin-top: 20px">
+    <a id="download">下载</a>
+    <button onclick="stop()">停止</button>
+</div>
+<video id="player" controls autoplay style="display: none;"></video>
+<canvas>
+
+</canvas>
+<script>
+    // 摄像头视频流录制状态
+    var stopped = false, shouldStop = false;
+    // 定时器ID
+    var canvasRenderTimer = null, recordTimer = null;
+
+
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+
+    var player = document.getElementById('player');
+    var canvas = document.querySelector('canvas');
+    var ctx = canvas.getContext('2d');
+    var downloadLink = document.querySelector('#download');
+
+    player.width = width;
+    player.height = height;
+
+    canvas.width = width;
+    canvas.height = height;
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+
+    var live = function() {
+        shouldStop = true;
+        navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+            .then(function(stream) {
+                player.srcObject = stream;
+
+                var drawVideo = function(ctx) {
+                    canvasRenderTimer = requestAnimationFrame(function() {
+                        drawVideo(ctx);
+                    });
+                    ctx.drawImage(player, 0, 0);
+                };
+                cancelAnimationFrame(canvasRenderTimer);
+                drawVideo(ctx);
+            });
+    };
+
+    var record = function() {
+        shouldStop = false;
+        stopped = false;
+        cancelAnimationFrame(canvasRenderTimer);
+        navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+            .then(function(stream) {
+
+                player.srcObject = stream;
+
+                var drawVideo = function(ctx) {
+                    canvasRenderTimer = requestAnimationFrame(function() {
+                        drawVideo(ctx);
+                    });
+                    ctx.drawImage(player, 0, 0);
+                };
+                cancelAnimationFrame(canvasRenderTimer);
+                drawVideo(ctx);
+
+                const options = {mimeType: 'video/webm'};
+                const recordedChunks = [];
+                const mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorder.addEventListener('dataavailable', function(e) {
+                    console.log(e);
+                    if (e.data.size > 0) {
+                        recordedChunks.push(e.data);
+                        // 向后端发送数据,Demo先将分片展示到页面上
+                        console.log('发送给后端的视频流分片：', e.data);
+                        var player = document.createElement('video');
+                        player.autoplay = true;
+                        player.controls = true;
+                        // FIXME 第二个分片开始不能播放，这里要看一下能不能通过MediaSource解决
+                        let url = URL.createObjectURL(new Blob([e.data]));
+                        player.src = url;
+                        document.body.appendChild(player);
+                    }
+
+                    if(shouldStop === true && stopped === false) {
+                        mediaRecorder.stop();
+                        stopped = true;
+                    }
+                });
+
+                mediaRecorder.addEventListener('stop', function() {
+                    downloadLink.href = URL.createObjectURL(new Blob(recordedChunks));
+                    downloadLink.download = 'acetest.webm';
+                });
+
+                mediaRecorder.start(3000);
+            });
+    };
+
+    var stop = function() {
+        shouldStop = true;
+    }
+
+</script>
+</body>
+</html>
